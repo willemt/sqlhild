@@ -30,7 +30,7 @@ You can put the module path as the parent of your table
 
 Postgres mode
 =============
-sqlhild in server mode runs a Postgres facade. You can use your favourite Postgres to play around with sqlhild tables.
+sqlhild in server mode runs a Postgres facade. You can use your favourite Postgres client to play around with sqlhild tables.
 
 .. code-block:: bash
    :class: ignore
