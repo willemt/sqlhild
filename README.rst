@@ -31,3 +31,8 @@ You can put the module path as the parent of your table
 Postgres mode
 =============
 sqlhild in server mode runs a Postgres facade. You can use your favourite Postgres to play around with sqlhild tables.
+
+.. code-block:: bash
+   :class: ignore
+
+   sqlhild --server 0.0.0.0:10000 --modules sqlhild.example
