@@ -5,7 +5,7 @@ You can run queries from the command line.
 .. code-block:: bash
    :class: ignore
 
-   sqlhild select '*' from `sqlhild.example.OneToTen`
+   sqlhild 'select * from `sqlhild.example.OneToTen`'
 
 You can load modules.
 
