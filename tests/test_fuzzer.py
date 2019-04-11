@@ -8,7 +8,7 @@ from sqlalchemy import (
 )
 from sqlalchemy.sql import and_, or_, not_, select
 
-from hypothesis import given
+from hypothesis import given, settings
 from hypothesis.strategies import (
     fixed_dictionaries,
     integers,
@@ -22,6 +22,11 @@ from hypothesis.strategies import (
 from sqlhild.query import go
 import sqlhild.query
 import sqlhild.table
+import sqlhild.example
+
+
+settings.register_profile("core", deadline=1000)
+settings.load_profile("core")
 
 
 class OneToTen(sqlhild.table.Table):
@@ -122,30 +127,14 @@ def where_data_to_sqlalchemy(data):
         if isinstance(right, (int)):
             right = text("'{0}'".format(right))
 
-        # if not isinstance(left, Column):
-        #     left = text(str(left))
-        # if not isinstance(right, Column):
-        #     right = text(str(right))
-
         return data['op'](left, right)
 
 
 sqlhose = SQLFuzzHose([
     OneToTen(),
-    sqlhild.table.TwoToTwentyInTwos(),
-    sqlhild.table.TestB(),
+    sqlhild.example.TwoToTwentyInTwos(),
+    sqlhild.example.TestB(),
 ])
-
-
-# data = [
-#     (1, "a", "b", "z"),
-#     (2, "b", "b", "z"),
-#     (3, "b", "b", "z"),
-# ]
-# fields = ["id", "name", "fullname", "age"]
-# for row in data:
-#     conn.execute(users.insert().values(dict(zip(fields, row))))
-# strategy.inject_rows(data)
 
 
 class CoreTestCase(unittest.TestCase):
@@ -161,7 +150,6 @@ class CoreTestCase(unittest.TestCase):
 
         # Convert to query SQLhild format
         query = str(query).replace('"', '`')
-        print(query)
 
         # Fetch SQLhild results
         rows = list(go(query))
