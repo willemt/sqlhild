@@ -12,7 +12,7 @@ def long_description():
 
 setup(
     name='sqlhild',
-    version='0.1.0',
+    version='0.1.1',
 
     description='sqlhild SQLifies everything',
     long_description=long_description(),

@@ -100,7 +100,7 @@ class SQLFuzzHose(object):
                     fixed_dictionaries({'and': lists(children, min_size=1, max_size=3)}),
                     # fixed_dictionaries({'not': lists(children, min_size=1, max_size=1)}),
                 )
-            })
+            }).map(sqlify)
 
     # def inject_rows(self, data):
     #     fields = ["id", "name", "fullname", "age"]
@@ -137,13 +137,15 @@ sqlhose = SQLFuzzHose([
 ])
 
 
-class CoreTestCase(unittest.TestCase):
-    @given(sqlhose.strategy())
-    def test_where(self, sql):
-        self.maxDiff = None
+def sqlify(sql):
+    return select('*').select_from(sql['table'].sqla).where(where_data_to_sqlalchemy(sql['where']))
 
-        # Generate query
-        query = select('*').select_from(sql['table'].sqla).where(where_data_to_sqlalchemy(sql['where']))
+
+class CoreTestCase(unittest.TestCase):
+    # @given(sqlhose.strategy().map(sqlify))
+    @given(sqlhose.strategy())
+    def test_where(self, query):
+        self.maxDiff = None
 
         # Fetch SQLite results
         sqllite_rows = list(sqlhose.conn.execute(query))
@@ -160,7 +162,11 @@ class CoreTestCase(unittest.TestCase):
         # print('sqllite:', sqllite_rows)
         # TODO: consider if sorting is correct
         #       it probably is correct unless there's an ORDER BY
-        self.assertEqual(sorted(rows), sorted(sqllite_rows))
+        try:
+            self.assertEqual(sorted(rows), sorted(sqllite_rows))
+        except:
+            print(query)
+            raise
 
 
 if __name__ == '__main__':

@@ -355,16 +355,20 @@ class EqualNonCommutative(Equal):
         )
 
 
-class Number(Symbol, int):
+class Number(Operation):
+    name = 'N'
+    arity = Arity.unary
+
+
+class Value(Symbol):
     def __init__(self, val):
-        super().__init__(str(val))
+        super().__init__(val)
         self.val = val
 
 
-class String(Symbol, str):
-    def __init__(self, val):
-        super().__init__(str(val))
-        self.val = val
+class String(Operation):
+    name = 'S'
+    arity = Arity.unary
 
 
 class Bool(Symbol):
@@ -436,213 +440,6 @@ def exp2op(exp):
         return In
     else:
         raise UnknownOp(exp['op'])
-
-
-class RelationalAlgebraParser(object):
-    def __init__(self, ast):
-        self.ast = ast
-
-        # Track the tables in the SQL query
-        self._tables = {}
-
-        self.table_aliases = {}
-
-    def _parse_arg(self, arg, relation):
-        if isinstance(arg, str):
-            return String(arg)
-        elif isinstance(arg, int):
-            return Number(arg)
-        elif isinstance(arg, dict):
-            if 'identifier' in arg:
-                return self._parse_column(arg['identifier'], relation)
-            elif 'select' in arg:
-                raise Exception()
-                # return self._parse_SELECT_query(arg, relation)
-            elif 'name' in arg:
-                return self._parse_function(arg, relation)
-
-        raise Exception('unknown arg')
-
-    def _parse_function(self, function, relation):
-        args = [self._parse_arg(arg, relation) for arg in function['args']]
-        func = Function(*args)
-        func.name = function['name']
-        return func
-
-    def _parse_column(self, col_identifier, ctx):
-        """
-        Convert column identifier (AST) into RA
-        """
-        col = ColumnMeta()
-
-        if '.' in col_identifier:
-            col.alias, col.name = col_identifier.split('.')
-        else:
-            col.alias = None
-            col.name = col_identifier
-
-        # If no table alias then assume we are using one table only
-        try:
-            table = self.table_aliases[col.alias]
-        except KeyError:
-            logging.error("unknown table alias '{0}'".format(col.alias))
-            col.table_identifier = ctx.relation.identifier
-        else:
-            col.table_identifier = table.identifier
-
-        return Column(Table(col.table_identifier), ColumnName(col.name))
-
-    def _parse_SELECT(self, ast, ctx):
-        pass
-
-    def _parse_FROM(self, ast, ctx):
-        for table in ast['from_']:
-            relation = self._register_table(table)
-
-            # Continually build source relation
-            if ctx.relation:
-                ctx.relation = Cross(ctx.relation, relation)
-            else:
-                ctx.relation = relation
-
-    def _register_table(self, table_ast):
-        table = table_ast
-        table_name = table.get('table_name').get('identifier')
-        if table.get('table_alias'):
-            table_alias = table.get('table_alias').get('identifier', '')
-        else:
-            table_alias = ''
-        table_name = normalize_tablename(table_name)
-        table_metadata = TableMetaData()
-        table_metadata.name = table_name
-
-        try:
-            existing_table = self._tables[table_name]
-        except KeyError:
-            table_identifier = table_name
-        else:
-            existing_table.instances += 1
-            table_identifier = '{0}^{1}'.format(
-                existing_table.name,
-                existing_table.instances)
-
-        table_metadata.identifier = table_identifier
-        table_metadata.alias = table_alias
-        self._tables[table_metadata.identifier] = table_metadata
-        if table_alias:
-            self.table_aliases[table_alias] = table_metadata
-
-        return Table(table_identifier)
-
-    def _parse_JOIN(self, ast, ctx):
-        assert ctx.relation
-        for join in ast['join']:
-            table = join.get('table')
-            relation = self._register_table(table)
-            col1 = self._parse_column(join['on']['expression']['args'][0]['identifier'], relation)
-            col2 = self._parse_column(join['on']['expression']['args'][1]['identifier'], relation)
-            if join['on']['expression']['name'] != '=':
-                raise Exception('JOIN operator unsupported')
-            if col1.table_identifier != ctx.relation.table_identifier:
-                col1, col2 = col2, col1
-            ctx.relation = Join(
-                Theta(ctx.relation, col1),
-                Theta(relation, col2))
-
-    def _parse_GROUPBY(self, ast, ctx):
-        columns = [
-            self._parse_column(groupby['identifier'], ctx)
-            for groupby in ast['groupby']]
-        return GroupBy(ctx.relation, *columns)
-
-    def _parse_SELECT_query(self, ast, ctx=None):
-        if not ctx:
-            ctx = QueryContext()
-        else:
-            ctx = ctx.clone()
-
-        self._parse_SELECT(ast, ctx)
-        self._parse_FROM(ast, ctx)
-        self._parse_JOIN(ast, ctx)
-
-        if ast['where']:
-            wops = self._build_where(ast['where'], ctx)
-            assert(len(wops) == 1)
-            relation = wops[0]
-        else:
-            relation = ctx.relation
-
-        if ast['groupby']:
-            return self._parse_GROUPBY(ast, ctx)
-
-        return relation
-
-    def parse(self):
-        """
-        Convert AST into RA
-        """
-        ast = self.ast
-        return self._parse_SELECT_query(ast)
-
-    def optimize(self, algebra):
-        from .relation_algebra_optimizers import optimize
-        return optimize(algebra)
-
-    def _parse_expression(self, exp, ctx):
-        if exp['name'] == 'EXISTS':
-            return Project(ctx.relation, self._parse_SELECT_query(exp['args'][0], ctx))
-
-        args = [self._parse_arg(arg, ctx) for arg in exp['args']]
-
-        try:
-            function = exp2op(exp['name'])(*args)
-        except UnknownOp:
-            function = self._parse_function(exp, ctx)
-
-        return Select(ctx.relation, function)
-
-    def _build_where(self, node, ctx):
-        if not node:
-            return []
-
-        wops = []
-
-        for clause_name, value in node.items():
-            if 'expression' == clause_name:
-                wops.append(self._parse_expression(value, ctx))
-
-            elif 'AND' == clause_name:
-                sub_wops = [
-                    s
-                    for sub_node in value
-                    for s in self._build_where(sub_node, ctx)
-                ]
-                wops.append(Intersection(*sub_wops))
-
-            elif 'OR' == clause_name:
-                sub_wops = [
-                    s
-                    for sub_node in value
-                    for s in self._build_where(sub_node, ctx)
-                ]
-                wops.append(Union(*sub_wops))
-
-            elif 'NOT' == clause_name:
-                raise Exception()
-                sub_wops = [
-                    s
-                    for sub_node in value
-                    for s in self._build_where(sub_node, ctx)
-                ]
-                wops.append(Intersection(*sub_wops))
-                wops.append(Not(*sub_wops))
-
-            elif 'parseinfo' == clause_name:
-                pass
-            else:
-                raise Exception(clause_name, value)
-
-        return wops
 
 
 def pretty_print(ra):

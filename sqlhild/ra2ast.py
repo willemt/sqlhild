@@ -189,12 +189,12 @@ def _(ra: ras.Like, ctx: Context):
 
 @convert.register
 def _(ra: ras.Number, ctx: Context):
-    return ast.Num(int(ra.val))
+    return ast.Num(int(ra[0].val))
 
 
 @convert.register
 def _(ra: ras.String, ctx: Context):
-    return ast.Str(ra.val)
+    return ast.Str(ra[0].val)
 
 
 @convert.register

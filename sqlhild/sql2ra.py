@@ -48,6 +48,7 @@ from .relational_algebra import (
     exp2op,
     pretty_print,
 )
+from .relational_algebra import Value as V
 
 
 logger = logging.getLogger(__name__)
@@ -132,11 +133,11 @@ def _(where: MySqlParser.FullColumnNameExpressionAtomContext, ctx):
 def _(where: MySqlParser.ConstantExpressionAtomContext, ctx):
     constant = where.constant()
     if constant.decimalLiteral():
-        return Number(constant.getText())
+        return Number(V(constant.getText()))
 
     elif constant.stringLiteral():
         text = re.sub(r"^'(.*)'$", r'\1', constant.getText())
-        return String(text)
+        return String(V(text))
 
     elif constant.booleanLiteral():
         if constant.booleanLiteral().FALSE():
@@ -210,7 +211,7 @@ def _(where: MySqlParser.LikePredicateContext, ctx):
 def _(where: MySqlParser.ScalarFunctionCallContext, ctx):
     func_name = where.scalarFunctionName().getText()
     # TODO: parse args
-    return Function(String(func_name))
+    return Function(String(V(func_name)))
 
 
 class RelationalAlgebraParser(object):
@@ -239,7 +240,7 @@ class RelationalAlgebraParser(object):
 
     def _parse_function_call(self, node):
         func_name = node.fullId().getText()
-        return Function(String(func_name))
+        return Function(String(V(func_name)))
         # node.functionArgs()
 
     def _parse_SELECT(self, select, ctx):
@@ -269,7 +270,7 @@ class RelationalAlgebraParser(object):
             # Constants: SELECT '1'
             elif isinstance(element, MySqlParser.SelectExpressionElementContext):
                 # TODO: replace with actual constant
-                func = Function(String("constant"), convert_where(element.expression(), ctx))
+                func = Function(String(V("constant")), convert_where(element.expression(), ctx))
                 select_columns.append(func)
                 if isinstance(relation, EmptySet):
                     relation = OneRowSet()
@@ -324,8 +325,8 @@ class RelationalAlgebraParser(object):
             except ValueError:
                 limit = int(limit_clause.decimalLiteral()[0].getText())
             else:
-                relation = Offset(relation, Number(offset))
-            relation = Limit(relation, Number(limit))
+                relation = Offset(relation, Number(V(offset)))
+            relation = Limit(relation, Number(V(limit)))
 
         return relation
 
@@ -533,7 +534,9 @@ class RelationalAlgebraParser(object):
         else:
             col.table_identifier = table.identifier
 
-        return Column(Table(col.table_identifier), ColumnName(col.name))
+        _table = Table(col.table_identifier)
+        _table.relation = table
+        return Column(_table, ColumnName(col.name))
 
 
 def sql2ra(antlr, available_tables):

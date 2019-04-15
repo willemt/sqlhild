@@ -23,20 +23,18 @@ from .relational_algebra import (
     Number,
     Or,
     Select,
-    Table,
+    String,
     Theta,
     Union,
     UniverseSet,
+    Value,
     pretty_print,
 )
 
 from matchpy import (
-    Arity,
     CustomConstraint,
-    Operation,
     Pattern,
     ReplacementRule,
-    Symbol,
     Wildcard,
     replace_all,
 )
@@ -47,8 +45,8 @@ logger = logging.getLogger(__name__)
 
 # a_true = Wildcard.dot('a_true', BoolTrue)
 # a_false = Wildcard.dot('a_false', BoolFalse)
-a_num = Wildcard.symbol('a_num', Number)
-b_num = Wildcard.symbol('b_num', Number)
+a_num = Wildcard.symbol('a_num', Value)
+b_num = Wildcard.symbol('b_num', Value)
 a = Wildcard.dot('a')
 b = Wildcard.dot('b')
 c = Wildcard.dot('c')
@@ -221,8 +219,8 @@ combine_selects = ReplacementRule(
 # )
 
 merge_less_thans = ReplacementRule(
-    Pattern(And(LessThan(a, a_num), LessThan(a, b_num), star)),
-    lambda a, a_num, b_num, star: And(LessThan(a, a_num if a_num < b_num else b_num), *star)
+    Pattern(And(LessThan(a, Number(a_num)), LessThan(a, Number(b_num)), star)),
+    lambda a, a_num, b_num, star: And(LessThan(a, Number(a_num) if a_num < b_num else Number(b_num)), *star)
 )
 
 """
@@ -231,8 +229,8 @@ Combine comparators if one is superseded
 This is useful for removing redundant filters.
 """
 merge_greater_thans = ReplacementRule(
-    Pattern(And(GreaterThan(a, a_num), GreaterThan(a, b_num), star)),
-    lambda a, a_num, b_num, star: And(GreaterThan(a, a_num if a_num > b_num else b_num), *star)
+    Pattern(And(GreaterThan(a, Number(a_num)), GreaterThan(a, Number(b_num)), star)),
+    lambda a, a_num, b_num, star: And(GreaterThan(a, Number(a_num) if a_num > b_num else Number(b_num)), *star)
 )
 
 """
@@ -402,6 +400,27 @@ def remove_universe_set(algebra):
     return replace_all(algebra, rules)
 
 
+def constraint_is_int_column(a, b, c):
+    if a.relation.columns.get_column_from_identifier(b.name).data_type.name == 'int':
+        return True
+    return False
+
+
+"""
+It's possible the user is doing something like this:
+    WHERE integer_column = '1'
+We need to coerce to the column's datatype in this case.
+"""
+coerce_to_int = ReplacementRule(
+    Pattern(
+        Equal(Column(a, b), String(c)),
+        CustomConstraint(constraint_is_int_column)
+        ),
+    lambda a, b, c:
+        Equal(Column(a, b), Number(c))
+)
+
+
 def optimize(algebra):
     rules = [
         # cross_reduction,
@@ -410,10 +429,12 @@ def optimize(algebra):
         cross_with_universe,
         remove_empty_select,
         convert_union_into_select,
+
         logic_and_true,
         logic_or_true,
         logic_or_false,
         intersect_true,
+
         select_tautology,
         equal_column_tautology,
         intersection_select_of_same_relation,
@@ -426,17 +447,27 @@ def optimize(algebra):
         cross_plus_select_2_join,
         join2,
         # join3,
+
+        # Convenience
         swap_comparison,
+
         merge_greater_thans,
         merge_less_thans,
+
+        # set
         false_becomes_emptyset,
         union_of_empty_set_is_ignored,
         intersection_of_empty_set_is_empty_set,
+
         push_select_down_cross,
         # empty_union,
         # shift_joins,
+
+        # IN (...)
         in_statement_2_ors,
         in_statement_false,
+
+        coerce_to_int,
     ]
     new_algebra = replace_all(algebra, rules)
     new_algebra._tables = algebra._tables
